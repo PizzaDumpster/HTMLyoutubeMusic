@@ -1,0 +1,210 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #00FF00;  /* Bright green for chroma keying (can be changed to white) */
+    color: #000;  /* Changed text color to black for better visibility against green */
+    line-height: 1.6;
+    overflow: hidden;
+}
+
+.overlay-container {
+    width: 100%;
+    position: relative;
+    z-index: 10;
+}
+
+.marquee-container {
+    background-color: #333333;  /* Solid dark background for contrast against chroma key */
+    padding: 10px 15px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+}
+
+.marquee {
+    white-space: nowrap;
+    font-size: 24px;
+    font-weight: bold;
+    color: #ffffff;
+    text-shadow: 1px 1px 2px #000;
+    animation: marquee 15s linear infinite;
+}
+
+@keyframes marquee {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+
+/* Controls are hidden by default but can be shown when needed for configuration */
+.controls-container {
+    display: none;  /* Hidden by default for OBS */
+    background-color: rgba(33, 33, 33, 0.9);
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 10px;
+    max-width: 800px;
+}
+
+/* Show controls when body has the class 'show-controls' */
+body.show-controls .controls-container {
+    display: block;
+}
+
+.playlist {
+    background-color: rgba(42, 42, 42, 0.7);
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+#playlist-items {
+    list-style-type: none;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+#playlist-items li {
+    padding: 8px;
+    border-bottom: 1px solid rgba(58, 58, 58, 0.7);
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+#playlist-items li:hover {
+    background-color: rgba(58, 58, 58, 0.5);
+}
+
+#playlist-items li.active {
+    background-color: rgba(255, 0, 0, 0.7);
+    color: white;
+}
+
+.add-video {
+    display: flex;
+    margin-top: 10px;
+}
+
+#video-url {
+    flex-grow: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 5px 0 0 5px;
+    background-color: rgba(58, 58, 58, 0.7);
+    color: white;
+}
+
+#add-video {
+    padding: 8px;
+    background-color: rgba(255, 0, 0, 0.7);
+    color: white;
+    border: none;
+    border-radius: 0 5px 5px 0;
+    cursor: pointer;
+}
+
+.player-controls {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.control-button {
+    background-color: rgba(255, 0, 0, 0.7);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    margin: 0 5px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.control-button:hover {
+    background-color: rgba(204, 0, 0, 0.7);
+}
+
+/* Volume control styles */
+.volume-control {
+    display: flex;
+    align-items: center;
+    margin-top: 10px;
+    background-color: rgba(42, 42, 42, 0.7);
+    border-radius: 5px;
+    padding: 5px 10px;
+    width: 100%;
+}
+
+.volume-control label {
+    margin-right: 10px;
+    font-size: 14px;
+    min-width: 60px;
+}
+
+.volume-control input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    background: rgba(58, 58, 58, 0.7);
+    border-radius: 5px;
+    margin: 0 10px;
+}
+
+.volume-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: rgba(255, 0, 0, 0.7);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.volume-control input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: rgba(255, 0, 0, 0.7);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.volume-control #volume-value {
+    font-weight: bold;
+    min-width: 30px;
+    text-align: right;
+}
+
+/* Hide the YouTube player completely */
+.hidden-player {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    left: -9999px;
+    visibility: hidden;
+    overflow: hidden;
+}
+
+/* Toggle button to show/hide controls */
+#toggle-controls {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    font-size: 20px;
+    z-index: 100;
+}

@@ -1,0 +1,524 @@
+// Global variables
+let currentVideoId = '';
+let playlist = [];
+let currentIndex = 0;
+let controlsVisible = false;
+let socket = null;
+let reconnectAttempts = 0;
+
+// WebSocket instead of BroadcastChannel for C++ compatibility
+function connectWebSocket() {
+    // Try to get port from server-helper.js if available
+    const port = typeof getServerPort === 'function' ? getServerPort() : 8765;
+    
+    console.log(`Attempting to connect to WebSocket server on port ${port}...`);
+    
+    // Connect to WebSocket server
+    try {
+        socket = new WebSocket(`ws://localhost:${port}`);
+        
+        socket.onopen = function(e) {
+            console.log('WebSocket connection established successfully!');
+            document.getElementById('song-info').textContent = 'Connected to music player...';
+            reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+            
+            // Send a ping to request current song info
+            try {
+                // Ask for the current song info
+                socket.send(JSON.stringify({
+                    command: "requestCurrentSongInfo"
+                }));
+                console.log("Sent request for current song info");
+                
+                // Set a timer to request song info again if we don't get a response
+                setTimeout(function() {
+                    const songInfo = document.getElementById('song-info');
+                    if (songInfo && songInfo.textContent === 'Connected to music player...') {
+                        console.log("No song info received yet, requesting again...");
+                        if (socket && socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({
+                                command: "requestCurrentSongInfo"
+                            }));
+                        }
+                    }
+                }, 2000);
+                
+            } catch (error) {
+                console.error("Error sending initial request:", error);
+            }
+        };
+        
+        socket.onmessage = function(event) {
+            try {
+                // Parse the received JSON message
+                const data = JSON.parse(event.data);
+                updateSongInfo(data);
+            } catch (e) {
+                console.error('Error parsing WebSocket message:', e);
+            }
+        };
+        
+        socket.onclose = function(event) {
+            if (event.wasClean) {
+                console.log(`WebSocket connection closed cleanly, code=${event.code}, reason=${event.reason}`);
+            } else {
+                console.log('WebSocket connection died unexpectedly');
+                // Try to reconnect after a delay that increases with each attempt
+                const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 30000);
+                console.log(`Attempting reconnect in ${delay/1000} seconds...`);
+                
+                setTimeout(connectWebSocket, delay);
+                reconnectAttempts++;
+                
+                // After several retries, try auto port detection
+                if (reconnectAttempts >= 3) {
+                    console.log('Multiple reconnection attempts failed. Trying port auto-detection...');
+                    if (typeof autoReconnectWebSocket === 'function') {
+                        autoReconnectWebSocket();
+                    }
+                    reconnectAttempts = 0;
+                }
+            }
+            document.getElementById('song-info').textContent = 'Waiting for connection to music player...';
+        };
+        
+        socket.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            // Connection errors will be handled by the onclose handler
+        };
+    } catch (e) {
+        console.error("Failed to create WebSocket connection:", e);
+        document.getElementById('song-info').textContent = 'Failed to connect to music player';
+        
+        // Try again after a delay
+        setTimeout(connectWebSocket, 5000);
+    }
+}
+
+// Create and register a heartbeat ping function
+function startHeartbeat() {
+    // Clear any existing interval
+    if (window.heartbeatInterval) {
+        clearInterval(window.heartbeatInterval);
+    }
+    
+    // Set up a new interval
+    window.heartbeatInterval = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            console.log("Sending heartbeat ping");
+            socket.send(JSON.stringify({
+                command: "ping"
+            }));
+        } else {
+            console.log("WebSocket not connected, attempting to reconnect...");
+            connectWebSocket();
+        }
+    }, 30000); // Every 30 seconds
+    
+    console.log("Started WebSocket heartbeat");
+}
+
+// Initialize when the document is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Create toggle button for controls
+    const toggleButton = document.createElement('button');
+    toggleButton.id = 'toggle-controls';
+    toggleButton.innerHTML = '⚙️';
+    toggleButton.title = 'Toggle Controls (Press C)';
+    toggleButton.addEventListener('click', toggleControls);
+    document.body.appendChild(toggleButton);
+
+    // Add keyboard shortcut
+    document.addEventListener('keydown', function(event) {
+        // Toggle controls with 'c' key
+        if (event.key === 'c' || event.key === 'C') {
+            toggleControls();
+        }
+    });
+
+    // Add debug info toggle with 'd' key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'd' || e.key === 'D') {
+            const debugEl = document.getElementById('debug-info');
+            if (debugEl) {
+                debugEl.style.display = debugEl.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+    });
+
+    // Load playlist from storage
+    loadPlaylistFromStorage();
+    
+    // Set up event listeners for the player controls
+    setupControlListeners();
+    
+    // Set up event listeners for input fields
+    setupInputListeners();
+    
+    // Create debug info panel
+    createDebugPanel();
+    
+    // Add a force refresh button
+    addForceRefreshButton();
+    
+    // Connect to the application via WebSocket
+    connectWebSocket();
+    
+    // Start the heartbeat
+    startHeartbeat();
+    
+    // Check URL params for autostart
+    const urlParams = new URLSearchParams(window.location.search);
+    const autostart = urlParams.get('autostart');
+    if (autostart === 'true') {
+        // Auto-hide controls if autostart is true
+        toggleButton.style.display = 'none';
+    }
+});
+
+// Create a debug panel
+function createDebugPanel() {
+    let debugElement = document.createElement('div');
+    debugElement.id = 'debug-info';
+    debugElement.style.position = 'fixed';
+    debugElement.style.bottom = '10px';
+    debugElement.style.left = '10px';
+    debugElement.style.backgroundColor = 'rgba(0,0,0,0.7)';
+    debugElement.style.color = '#0f0';
+    debugElement.style.padding = '10px';
+    debugElement.style.fontSize = '12px';
+    debugElement.style.fontFamily = 'monospace';
+    debugElement.style.maxWidth = '80%';
+    debugElement.style.maxHeight = '200px';
+    debugElement.style.overflow = 'auto';
+    debugElement.style.display = 'none';  // Hidden by default
+    debugElement.style.zIndex = '9999';
+    document.body.appendChild(debugElement);
+    
+    // Add title to debug panel
+    const debugTitle = document.createElement('div');
+    debugTitle.textContent = 'Debug Info (Press D to hide)';
+    debugTitle.style.fontWeight = 'bold';
+    debugTitle.style.marginBottom = '10px';
+    debugTitle.style.borderBottom = '1px solid #0f0';
+    debugElement.appendChild(debugTitle);
+}
+
+// Toggle controls visibility
+function toggleControls() {
+    controlsVisible = !controlsVisible;
+    if (controlsVisible) {
+        document.body.classList.add('show-controls');
+    } else {
+        document.body.classList.remove('show-controls');
+    }
+}
+
+// Update the song information display based on the data received
+function updateSongInfo(data) {
+    console.log('Received data:', data);
+    
+    // Update debug info
+    const debugElement = document.getElementById('debug-info');
+    if (debugElement) {
+        const timeStr = new Date().toLocaleTimeString();
+        const debugMsg = document.createElement('div');
+        debugMsg.innerHTML = `<span style="color:#999">${timeStr}</span>: Received data`;
+        
+        const dataContent = document.createElement('pre');
+        dataContent.textContent = JSON.stringify(data, null, 2);
+        dataContent.style.margin = '5px 0';
+        dataContent.style.padding = '5px';
+        dataContent.style.backgroundColor = 'rgba(0,0,0,0.3)';
+        dataContent.style.borderLeft = '3px solid #0f0';
+        debugMsg.appendChild(dataContent);
+        
+        debugElement.appendChild(debugMsg);
+        
+        // Limit the number of messages to avoid excessive memory use
+        while (debugElement.children.length > 20) {
+            debugElement.removeChild(debugElement.children[1]); // Keep the title
+        }
+        
+        // Scroll to the bottom
+        debugElement.scrollTop = debugElement.scrollHeight;
+    }
+    
+    // Handle ping response
+    if (data.command === "pong") {
+        console.log("Received pong from server");
+        return;
+    }
+    
+    // Handle volume updates
+    if (data.command === "volumeUpdate" && data.value !== undefined) {
+        const volumeSlider = document.getElementById('volume-slider');
+        const volumeValue = document.getElementById('volume-value');
+        
+        if (volumeSlider && volumeValue) {
+            volumeSlider.value = data.value;
+            volumeValue.textContent = data.value;
+        }
+        return;
+    }
+    
+    // Handle data wrapped in command structure from Python UI
+    if (data.command && data.params) {
+        console.log('Command data received:', data.command);
+        
+        // Check for nowPlaying command or song info in params
+        if (data.command === "nowPlaying" && data.params) {
+            console.log('nowPlaying data:', data.params); // Additional debug
+            if (data.params.title && data.params.author) {
+                const videoTitle = data.params.title;
+                const author = data.params.author;
+                
+                // Update the marquee text
+                const marqueeText = `Now Playing: ${videoTitle} by ${author}`;
+                document.getElementById('song-info').textContent = marqueeText;
+                
+                // Update playlist if provided
+                if (data.params.playlist) {
+                    playlist = data.params.playlist;
+                    currentIndex = data.params.currentIndex !== undefined ? data.params.currentIndex : currentIndex;
+                    updatePlaylistUI();
+                }
+                
+                // Restart the marquee animation
+                restartMarqueeAnimation();
+                
+                // Save the updated playlist to local storage
+                savePlaylistToStorage();
+                return;
+            }
+        }
+    }
+    
+    // If it's a direct song info object (from server broadcast)
+    if (data.title && data.author) {
+        const videoTitle = data.title;
+        const author = data.author;
+        
+        // Update the marquee text
+        const marqueeText = `Now Playing: ${videoTitle} by ${author}`;
+        document.getElementById('song-info').textContent = marqueeText;
+        
+        // Update the playlist if included in the data
+        if (data.playlist && data.currentIndex !== undefined) {
+            playlist = data.playlist;
+            currentIndex = data.currentIndex;
+            updatePlaylistUI();
+        }
+        
+        // Restart the marquee animation
+        restartMarqueeAnimation();
+        
+        // Save the updated playlist to local storage
+        savePlaylistToStorage();
+    }
+}
+
+// Add a force refresh button
+function addForceRefreshButton() {
+    const refreshButton = document.createElement('button');
+    refreshButton.id = 'force-refresh';
+    refreshButton.textContent = 'Refresh Song Info';
+    refreshButton.title = 'Force refresh song information';
+    refreshButton.style.position = 'fixed';
+    refreshButton.style.top = '10px';
+    refreshButton.style.right = '10px';
+    refreshButton.style.padding = '5px 10px';
+    refreshButton.style.backgroundColor = '#2196F3';
+    refreshButton.style.color = 'white';
+    refreshButton.style.border = 'none';
+    refreshButton.style.borderRadius = '4px';
+    refreshButton.style.cursor = 'pointer';
+    refreshButton.style.zIndex = '9998';
+    
+    refreshButton.addEventListener('click', function() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                command: "requestCurrentSongInfo"
+            }));
+            this.textContent = 'Requesting...';
+            setTimeout(() => {
+                this.textContent = 'Refresh Song Info';
+            }, 1000);
+        } else {
+            this.textContent = 'Not Connected!';
+            setTimeout(() => {
+                this.textContent = 'Refresh Song Info';
+            }, 1000);
+            connectWebSocket();
+        }
+    });
+    
+    document.body.appendChild(refreshButton);
+}
+
+// Helper function to restart the marquee animation
+function restartMarqueeAnimation() {
+    const marqueeElement = document.getElementById('song-info');
+    marqueeElement.style.animation = 'none';
+    setTimeout(() => {
+        marqueeElement.style.animation = 'marquee 15s linear infinite';
+    }, 10);
+}
+
+// Set up event listeners for the control buttons
+function setupControlListeners() {
+    // These buttons will send control messages to the Python application via WebSocket
+    document.getElementById('play-button')?.addEventListener('click', function() {
+        sendCommand({ command: 'play' });
+    });
+    
+    document.getElementById('pause-button')?.addEventListener('click', function() {
+        sendCommand({ command: 'pause' });
+    });
+    
+    document.getElementById('prev-button')?.addEventListener('click', function() {
+        sendCommand({ command: 'previous' });
+    });
+    
+    document.getElementById('next-button')?.addEventListener('click', function() {
+        sendCommand({ command: 'next' });
+    });
+    
+    document.getElementById('add-video')?.addEventListener('click', function() {
+        const input = document.getElementById('video-url');
+        if (input && input.value) {
+            // Send the command to add the video
+            sendCommand({ 
+                command: 'addVideo', 
+                url: input.value
+            });
+            
+            // Clear the input field
+            input.value = '';
+            
+            // Show temporary success message
+            const originalButtonText = this.textContent;
+            this.textContent = 'Adding...';
+            
+            // Reset button text after a short delay
+            setTimeout(() => {
+                this.textContent = originalButtonText;
+            }, 2000);
+        }
+    });
+    
+    // Volume control event listener
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeValue = document.getElementById('volume-value');
+    
+    if (volumeSlider && volumeValue) {
+        volumeSlider.addEventListener('input', function() {
+            const volume = this.value;
+            volumeValue.textContent = volume;
+            sendCommand({
+                command: 'volume',
+                value: parseInt(volume)
+            });
+        });
+    }
+}
+
+// Helper function to send commands to the Python application
+function sendCommand(data) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(data));
+    } else {
+        console.log('WebSocket not connected. Attempting to reconnect...');
+        connectWebSocket();
+    }
+}
+
+// Set up event listeners for input fields
+function setupInputListeners() {
+    // Handle video URL input with Enter key
+    const input = document.getElementById('video-url');
+    if (input) {
+        input.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('add-video').click();
+            }
+        });
+    }
+}
+
+// Update the playlist display in the UI
+function updatePlaylistUI() {
+    const playlistElement = document.getElementById('playlist-items');
+    if (!playlistElement) return;
+    
+    playlistElement.innerHTML = '';
+    
+    playlist.forEach((video, index) => {
+        const li = document.createElement('li');
+        li.textContent = `${video.title} - ${video.author}`;
+        
+        if (index === currentIndex) {
+            li.classList.add('active');
+        }
+        
+        li.addEventListener('click', function() {
+            sendCommand({
+                command: 'loadVideo',
+                index: index
+            });
+        });
+        
+        playlistElement.appendChild(li);
+    });
+}
+
+// Save playlist to local storage
+function savePlaylistToStorage() {
+    localStorage.setItem('youtubePlaylist', JSON.stringify(playlist));
+    localStorage.setItem('currentIndex', currentIndex.toString());
+}
+
+// Load playlist from local storage
+function loadPlaylistFromStorage() {
+    const savedPlaylist = localStorage.getItem('youtubePlaylist');
+    const savedIndex = localStorage.getItem('currentIndex');
+    
+    if (savedPlaylist) {
+        playlist = JSON.parse(savedPlaylist);
+        currentIndex = savedIndex ? parseInt(savedIndex) : 0;
+        
+        // Update UI
+        updatePlaylistUI();
+    }
+}
+
+// Overlay WebSocket client: only updates display, does NOT play audio/video
+const ws = new WebSocket('ws://localhost:8765');
+
+ws.onopen = () => {
+  console.log('Overlay connected to WebSocket server');
+};
+
+ws.onmessage = (event) => {
+  try {
+    const msg = JSON.parse(event.data);
+    if (msg.command === 'nowPlaying' && msg.params) {
+      updateNowPlaying(msg.params);
+    }
+  } catch (e) {
+    console.error('Error parsing message:', e);
+  }
+};
+
+ws.onerror = (e) => {
+  console.error('WebSocket error:', e);
+};
+
+function updateNowPlaying(song) {
+  // Only update the overlay display, do NOT play any media
+  const titleElem = document.getElementById('song-title');
+  const authorElem = document.getElementById('song-author');
+  if (titleElem) titleElem.textContent = song.title || '';
+  if (authorElem) authorElem.textContent = song.author || '';
+}

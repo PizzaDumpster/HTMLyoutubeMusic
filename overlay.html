@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Music Overlay for OBS</title>
+    <link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+    <div class="overlay-container">
+        <div class="marquee-container">
+            <div id="song-info" class="marquee">
+                Loading song information...
+            </div>
+        </div>
+    </div>
+    
+    <div class="controls-container">
+        <div class="playlist">
+            <ul id="playlist-items">
+                <!-- Playlist items will be added here by JavaScript -->
+            </ul>
+            <div class="add-video">
+                <input type="text" id="video-url" placeholder="Enter YouTube Video URL or ID">
+                <button id="add-video">Add to Playlist</button>
+            </div>
+        </div>
+        <div class="player-controls">
+            <button id="prev-button" class="control-button">Previous</button>
+            <button id="play-button" class="control-button">Play</button>
+            <button id="pause-button" class="control-button">Pause</button>
+            <button id="next-button" class="control-button">Next</button>
+            <div class="volume-control">
+                <label for="volume-slider">Volume:</label>
+                <input type="range" id="volume-slider" min="0" max="100" value="50">
+                <span id="volume-value">50</span>%
+            </div>
+        </div>
+    </div>
+    
+    <!-- No YouTube player needed in the overlay, the main player handles playback -->
+    
+    <!-- Server helper script to get the correct port -->
+    <script src="server-helper.js"></script>
+    
+    <!-- Use the receiver script that gets data from main player -->
+    <script src="overlay-receiver.js"></script>
+</body>
+</html>
